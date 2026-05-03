@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Ball Master: Ultimate Aesthetic</title>
+    <style>
+        :root { --bg: #050505; --primary: #00d4ff; --gold: #ffd700; }
+        body {
+            margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            overflow: hidden; touch-action: none; color: white; transition: 1s;
+        }
+        #ui-layer { position: absolute; top: 15px; text-align: center; width: 100%; pointer-events: none; z-index: 5; }
+        .coin-display { color: var(--gold); font-weight: bold; font-size: 1.4rem; text-shadow: 0 0 10px rgba(255,215,0,0.3); }
+        canvas { border-radius: 20px; box-shadow: 0 0 50px rgba(0,0,0,0.8); cursor: none; }
+        
+        .overlay {
+            position: absolute; background: rgba(0, 0, 0, 0.95); padding: 25px;
+            border-radius: 25px; text-align: center; border: 1px solid var(--primary);
+            width: 320px; z-index: 10; backdrop-filter: blur(15px); max-height: 80vh; overflow-y: auto;
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.2);
+        }
+        .tabs { display: flex; gap: 8px; margin-bottom: 15px; }
+        .tab-btn { flex: 1; padding: 10px; background: #222; border: none; color: white; border-radius: 12px; cursor: pointer; font-size: 0.8rem; transition: 0.3s;}
+        .tab-btn.active { background: var(--primary); color: black; font-weight: bold; }
+        
+        .shop-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 15px 0; }
+        .item { padding: 12px; border: 2px solid #333; border-radius: 18px; cursor: pointer; transition: 0.2s; background: #111; }
+        .item.active { border-color: var(--primary); background: #002233; transform: scale(1.05); }
+        .preview { font-size: 1.8rem; display: block; margin-bottom: 5px; }
+        .price-tag { font-size: 0.65rem; font-weight: bold; opacity: 0.8; }
+        
+        button.main-btn { 
+            padding: 15px 60px; background: var(--primary); border: none; 
+            border-radius: 50px; font-weight: bold; font-size: 1.2rem; 
+            cursor: pointer; color: #000; transition: 0.3s;
+            box-shadow: 0 4px 15px rgba(0, 212, 255, 0.4);
+        }
+        button.main-btn:hover { transform: translateY(-3px); }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="lvl-txt" style="opacity: 0.7; font-size: 0.8rem; letter-spacing: 2px;">JOURNEY</div>
+        <div id="theme-name" style="font-size: 1.6rem; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">SNOWY NIGHT</div>
+        <div class="coin-display">🪙 <span id="coin-count">0</span></div>
+        <div style="font-size: 0.8rem; margin-top: 5px;">Target: <span id="current-bounces">0</span> / <span id="target-bounces">5</span></div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="menu-box" class="overlay">
+        <h2 style="margin-top:0; letter-spacing: 2px;">ARSENAL</h2>
+        <div class="tabs">
+            <button id="btn-ball" class="tab-btn active" onclick="setTab('ball')">BOLA</button>
+            <button id="btn-paddle" class="tab-btn" onclick="setTab('paddle')">PAPAN</button>
+        </div>
+        <div id="shop-items" class="shop-grid"></div>
+        <button class="main-btn" onclick="startGame()">MAIN SEKARANG</button>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const menuBox = document.getElementById('menu-box');
+
+    canvas.width = Math.min(window.innerWidth - 30, 400);
+    canvas.height = 580;
+
+    let gameActive = false;
+    let level = 1;
+    let totalCoins = parseInt(localStorage.getItem('coins_vfinal')) || 0;
+    let bounces = 0;
+    let particles = [];
+    let currentTab = 'ball';
+
+    // --- DATA SKIN BOLA ---
+    const ballSkins = [
+        { id: 0, icon: '⚪', color: '#ffffff', p: 0 },
+        { id: 1, icon: '🏀', color: '#ff8c00', p: 50 },
+        { id: 2, icon: '⚽', color: '#ffffff', p: 100 },
+        { id: 3, icon: '🎾', color: '#ccff00', p: 150 },
+        { id: 4, icon: '🔮', color: '#a020f0', p: 300 },
+        { id: 5, icon: '🔥', color: '#ff4500', p: 500 }
+    ];
+
+    // --- DATA SKIN PAPAN ---
+    const paddleSkins = [
+        { id: 0, icon: '🟦', color: '#00d4ff', p: 0 },
+        { id: 1, icon: '🪵', color: '#8b4513', p: 60 },
+        { id: 2, icon: '🔩', color: '#808080', p: 120 },
+        { id: 3, icon: '🔱', color: '#ffd700', p: 250 },
+        { id: 4, icon: '🚀', color: '#483d8b', p: 400 },
+        { id: 5, icon: '⌨️', color: '#ffffff', p: 600 }
+    ];
+
+    let activeBall = JSON.parse(localStorage.getItem('active_ball_vf')) || ballSkins[0];
+    let activePaddle = JSON.parse(localStorage.getItem('active_paddle_vf')) || paddleSkins[0];
+    let ownedBalls = JSON.parse(localStorage.getItem('owned_balls_vf')) || [0];
+    let ownedPaddles = JSON.parse(localStorage.getItem('owned_paddles_vf')) || [0];
+
+    // --- DATA TEMA & EFEK ---
+    const themes = [
+        { n: "Snowy Night", c: ["#0f172a", "#1e293b"], char: "❄️", speed: 1 },
+        { n: "Sakura Spring", c: ["#2d0a1a", "#701a75"], char: "🌸", speed: 0.8 },
+        { n: "Hyper Space", c: ["#000", "#000"], char: "✨", speed: 4 },
+        { n: "Autumn Wind", c: ["#451a03", "#78350f"], char: "🍁", speed: 1.2 },
+        { n: "Deep Sea", c: ["#022c22", "#064e3b"], char: "🫧", speed: -1.5 }
+    ];
+
+    let balls = [];
+    let paddle = { width: 120, height: 14, x: 140, y: 520 };
+
+    function setTab(t) {
+        currentTab = t;
+        document.getElementById('btn-ball').classList.toggle('active', t === 'ball');
+        document.getElementById('btn-paddle').classList.toggle('active', t === 'paddle');
+        renderShop();
+    }
+
+    function renderShop() {
+        const container = document.getElementById('shop-items');
+        container.innerHTML = '';
+        const list = currentTab === 'ball' ? ballSkins : paddleSkins;
+        const owned = currentTab === 'ball' ? ownedBalls : ownedPaddles;
+        const active = currentTab === 'ball' ? activeBall : activePaddle;
+
+        list.forEach(s => {
+            const isOwned = owned.includes(s.id);
+            const isActive = active.id === s.id;
+            const div = document.createElement('div');
+            div.className = `item ${isActive ? 'active' : ''}`;
+            div.innerHTML = `
+                <span class="preview">${s.icon}</span>
+                <span class="price-tag">${isOwned ? (isActive ? 'PAKAI' : 'PILIH') : '🪙 '+s.p}</span>
+            `;
+            div.onclick = () => {
+                if(isOwned) { 
+                    if(currentTab === 'ball') activeBall = s; else activePaddle = s; 
+                } else if(totalCoins >= s.p) { 
+                    totalCoins -= s.p; 
+                    owned.push(s.id); 
+                }
+                save(); renderShop(); updateUI();
+            };
+            container.appendChild(div);
+        });
+    }
+
+    function save() {
+        localStorage.setItem('coins_vfinal', totalCoins);
+        localStorage.setItem('owned_balls_vf', JSON.stringify(ownedBalls));
+        localStorage.setItem('owned_paddles_vf', JSON.stringify(ownedPaddles));
+        localStorage.setItem('active_ball_vf', JSON.stringify(activeBall));
+        localStorage.setItem('active_paddle_vf', JSON.stringify(activePaddle));
+    }
+
+    function startGame() {
+        gameActive = true; 
+        menuBox.style.display = 'none';
+        level = 1; 
+        setupLevel();
+    }
+
+    function setupLevel() {
+        bounces = 0;
+        const speed = Math.min(8.5, 4 + (level * 0.3));
+        // Reset bola
+        balls = [{ x: canvas.width/2, y: 150, vx: 3, vy: speed, r: 12 }];
+        // Double ball di level tinggi
+        if(level > 1) {
+            balls.push({ x: canvas.width/2, y: 200, vx: -3, vy: speed, r: 12 });
+        }
+        
+        // Setup Partikel Efek
+        particles = [];
+        const theme = themes[Math.min(level-1, themes.length-1)];
+        for(let i=0; i<15; i++) {
+            particles.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                v: (Math.random() * 1 + 0.5) * theme.speed,
+                rot: Math.random() * Math.PI * 2
+            });
+        }
+        
+        document.getElementById('theme-name').innerText = theme.n;
+        document.getElementById('lvl-txt').innerText = "LEVEL " + level;
+        updateUI();
+    }
+
+    function updateUI() {
+        document.getElementById('coin-count').innerText = totalCoins;
+        document.getElementById('current-bounces').innerText = bounces;
+        document.getElementById('target-bounces').innerText = 5 + (level*2);
+    }
+
+    // Input Handlers
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        paddle.x = (e.clientX - rect.left) - paddle.width/2;
+    });
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        paddle.x = (e.touches[0].clientX - rect.left) - paddle.width/2;
+    }, {passive:false});
+
+    function draw() {
+        const theme = themes[Math.min(level-1, themes.length-1)];
+        
+        // Latar Belakang Gradasi
+        const grd = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        grd.addColorStop(0, theme.c[0]); 
+        grd.addColorStop(1, theme.c[1]);
+        ctx.fillStyle = grd; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Efek Partikel Bergerak
+        ctx.font = "18px Arial";
+        particles.forEach(p => {
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            ctx.globalAlpha = 0.25;
+            ctx.fillText(theme.char, 0, 0);
+            ctx.restore();
+            
+            p.y += p.v;
+            p.rot += 0.01;
+            
+            if(p.v > 0 && p.y > canvas.height) p.y = -30;
+            if(p.v < 0 && p.y < -30) p.y = canvas.height;
+        });
+        ctx.globalAlpha = 1.0;
+
+        // Gambar Papan (Paddle)
+        ctx.fillStyle = activePaddle.color;
+        ctx.shadowBlur = 25; ctx.shadowColor = activePaddle.color;
+        ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.font = "bold 12px Arial";
+        ctx.fillText(activePaddle.icon, paddle.x + paddle.width/2 - 7, paddle.y + 11);
+
+        // Gambar & Logika Bola
+        balls.forEach(b => {
+            ctx.shadowBlur = 15; ctx.shadowColor = activeBall.color;
+            ctx.fillStyle = activeBall.color;
+            ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = "white";
+            ctx.font = "16px Arial";
+            ctx.fillText(activeBall.icon, b.x - 10, b.y + 6);
+
+            if(gameActive) {
+                b.x += b.vx; b.y += b.vy;
+                
+                // Pantulan Dinding
+                if(b.x + b.r > canvas.width || b.x - b.r < 0) b.vx *= -1;
+                if(b.y - b.r < 0) b.vy *= -1;
+                
+                // Pantulan Papan
+                if(b.y + b.r >= paddle.y && b.x >= paddle.x && b.x <= paddle.x + paddle.width) {
+                    b.vy = -Math.abs(b.vy);
+                    b.vx = (b.x - (paddle.x + paddle.width/2)) * 0.25;
+                    bounces++; 
+                    totalCoins += 2; 
+                    updateUI();
+                    
+                    // Cek Naik Level
+                    if(bounces >= (5 + level*2)) { 
+                        level++; 
+                        setupLevel(); 
+                    }
+                }
+            }
+        });
+
+        // Cek Game Over
+        balls = balls.filter(b => b.y < canvas.height);
+        if(gameActive && balls.length === 0) {
+            gameActive = false; 
+            menuBox.style.display = 'block';
+            save(); 
+            renderShop();
+        }
+
+        requestAnimationFrame(draw);
+    }
+
+    // Inisialisasi awal
+    renderShop();
+    draw();
+</script>
+</body>
+</html>
